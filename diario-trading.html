@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Diario de Trading</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0a0a0d">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Diario Trading">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="icon" href="icons/icon-192.png">
+<style>
+  :root{
+    --bg: #0a0a0d;
+    --panel: #131318;
+    --panel-border: #232329;
+    --gold: #e6b84d;
+    --text: #f2f2f0;
+    --muted: #6f6f78;
+    --green: #4fce8a;
+    --red: #f2685c;
+    --cell: #17171c;
+  }
+  *{ box-sizing: border-box; }
+  body{
+    margin:0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    padding: 28px 18px 60px;
+  }
+  .header{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    margin-bottom: 22px;
+    letter-spacing: 2px;
+  }
+  .dot{
+    width:8px; height:8px; border-radius:50%;
+    background: var(--gold);
+  }
+  .eyebrow{
+    font-size: 13px;
+    font-weight: 600;
+    color: #cfcfd4;
+    letter-spacing: 3px;
+  }
+  .nav{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    margin-bottom: 22px;
+  }
+  .nav button{
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    color: var(--text);
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    font-size: 18px;
+    cursor:pointer;
+  }
+  .nav button:hover{ background:#1c1c22; }
+  .month-title{ font-size: 26px; font-weight: 700; }
+
+  .summary{
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 18px;
+    padding: 22px 22px 18px;
+    margin-bottom: 22px;
+  }
+  .summary .label{
+    font-size: 12px;
+    letter-spacing: 2px;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+  .summary .total{
+    font-size: 38px;
+    font-weight: 700;
+    margin-bottom: 14px;
+  }
+  .total.pos{ color: var(--green); }
+  .total.neg{ color: var(--red); }
+  hr{
+    border: none;
+    border-top: 1px solid var(--panel-border);
+    margin: 14px 0 16px;
+  }
+  .stats{
+    display:flex;
+    gap: 30px;
+  }
+  .stats .stat .label{ margin-bottom: 4px; }
+  .stats .stat .value{ font-size: 20px; font-weight: 700; }
+  .value.pos-text{ color: var(--green); }
+  .value.neg-text{ color: var(--red); }
+
+  .calendar{
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 18px;
+    padding: 20px 14px;
+  }
+  .weekdays{
+    display:grid;
+    grid-template-columns: repeat(5, 1fr);
+    text-align:center;
+    color: var(--muted);
+    font-size: 13px;
+    letter-spacing: 1px;
+    margin-bottom: 12px;
+  }
+  .grid{
+    display:grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 8px;
+  }
+  .cell{
+    aspect-ratio: 1 / 1;
+    background: var(--cell);
+    border: 1px solid var(--panel-border);
+    border-radius: 12px;
+    padding: 8px;
+    display:flex;
+    flex-direction:column;
+    justify-content:space-between;
+    cursor:pointer;
+    position:relative;
+    min-height: 66px;
+  }
+  .cell:hover{ border-color:#3a3a42; }
+  .cell.empty{
+    background: transparent;
+    border: none;
+    cursor: default;
+  }
+  .cell.today{
+    border-color: var(--gold);
+  }
+  .cell .daynum{
+    font-size: 14px;
+    color: var(--text);
+  }
+  .cell .amount{
+    font-size: 13px;
+    font-weight: 700;
+    align-self:flex-end;
+  }
+  .amount.pos{ color: var(--green); }
+  .amount.neg{ color: var(--red); }
+
+  .hint{
+    text-align:center;
+    color: var(--muted);
+    font-size: 13px;
+    margin-top: 18px;
+  }
+
+  /* modal */
+  .overlay{
+    position:fixed; inset:0;
+    background: rgba(0,0,0,0.6);
+    display:none;
+    align-items:center;
+    justify-content:center;
+    padding: 20px;
+    z-index: 50;
+  }
+  .overlay.show{ display:flex; }
+  .modal{
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 16px;
+    padding: 22px;
+    width: 100%;
+    max-width: 320px;
+  }
+  .modal h3{
+    margin: 0 0 16px;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--gold);
+    letter-spacing: 1px;
+  }
+  .modal input{
+    width: 100%;
+    background: var(--cell);
+    border: 1px solid var(--panel-border);
+    color: var(--text);
+    font-size: 18px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    margin-bottom: 16px;
+  }
+  .modal input:focus{ outline: none; border-color: var(--gold); }
+  .modal-actions{
+    display:flex;
+    gap: 10px;
+  }
+  .modal-actions button{
+    flex:1;
+    padding: 12px;
+    border-radius: 10px;
+    border: 1px solid var(--panel-border);
+    background: var(--cell);
+    color: var(--text);
+    font-size: 14px;
+    cursor:pointer;
+  }
+  .modal-actions button.save{
+    background: var(--gold);
+    color: #1a1608;
+    border-color: var(--gold);
+    font-weight: 700;
+  }
+  .modal-actions button.clear{
+    color: var(--red);
+  }
+</style>
+</head>
+<body>
+
+  <div class="header">
+    <span class="dot"></span>
+    <span class="eyebrow">DIARIO DE TRADING</span>
+  </div>
+
+  <div class="nav">
+    <button id="prevBtn">‹</button>
+    <div class="month-title" id="monthTitle">Julio 2026</div>
+    <button id="nextBtn">›</button>
+  </div>
+
+  <div class="summary">
+    <div class="label">TOTAL DEL MES</div>
+    <div class="total" id="totalAmount">€0</div>
+    <hr>
+    <div class="stats">
+      <div class="stat">
+        <div class="label">TOTAL € GANADOS</div>
+        <div class="value pos-text" id="totalWon">€0</div>
+      </div>
+      <div class="stat">
+        <div class="label">TOTAL € PERDIDOS</div>
+        <div class="value neg-text" id="totalLost">€0</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="calendar">
+    <div class="weekdays">
+      <div>L</div><div>M</div><div>X</div><div>J</div><div>V</div>
+    </div>
+    <div class="grid" id="grid"></div>
+  </div>
+
+  <div class="hint">Toca un día para añadir tu resultado</div>
+
+  <button id="exportBtn" style="display:block;margin:18px auto 0;background:var(--panel);border:1px solid var(--panel-border);color:var(--text);padding:12px 20px;border-radius:10px;font-size:14px;cursor:pointer;">Exportar CSV</button>
+
+  <button id="saveAllBtn" style="display:block;width:100%;max-width:400px;margin:14px auto 0;background:var(--gold);border:1px solid var(--gold);color:#1a1608;padding:14px 20px;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer;">Guardar</button>
+
+  <div class="overlay" id="overlay">
+    <div class="modal">
+      <h3 id="modalDay">DÍA 3 DE JULIO</h3>
+      <input type="number" id="amountInput" placeholder="Introduce el resultado (€)" step="0.01">
+      <div class="modal-actions">
+        <button class="clear" id="clearBtn">Borrar</button>
+        <button id="cancelBtn">Cancelar</button>
+        <button class="save" id="saveBtn">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+  const monthNames = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+
+  let currentYear = 2026;
+  let currentMonth = 6; // July (0-indexed)
+  let activeDay = null;
+  let loaded = false;
+
+  // in-memory cache: key "YYYY-M-D" -> number, mirrored to persistent storage
+  const results = {};
+
+  function monthKey(y,m){ return 'diario:' + y + '-' + m; }
+
+  function loadMonth(y,m){
+    try{
+      const raw = localStorage.getItem(monthKey(y,m));
+      const data = raw ? JSON.parse(raw) : {};
+      Object.keys(results).forEach(k => {
+        if(k.startsWith(y+'-'+m+'-')) delete results[k];
+      });
+      Object.keys(data).forEach(day => {
+        results[getKey(y,m,day)] = data[day];
+      });
+    }catch(e){
+      // no hay datos guardados todavía para este mes
+    }
+  }
+
+  function saveMonth(y,m){
+    const data = {};
+    Object.keys(results).forEach(k => {
+      if(k.startsWith(y+'-'+m+'-')){
+        const day = k.split('-')[2];
+        data[day] = results[k];
+      }
+    });
+    try{
+      localStorage.setItem(monthKey(y,m), JSON.stringify(data));
+    }catch(e){
+      console.warn('No se pudo guardar el diario en este dispositivo.', e);
+    }
+  }
+
+  function allMonthKeys(){
+    const keys = [];
+    for(let i=0;i<localStorage.length;i++){
+      const k = localStorage.key(i);
+      if(k && k.startsWith('diario:')) keys.push(k);
+    }
+    return keys;
+  }
+
+  function saveAllMonths(){
+    const months = new Set();
+    Object.keys(results).forEach(k => {
+      const parts = k.split('-');
+      months.add(parts[0] + '-' + parts[1]);
+    });
+    months.forEach(key => {
+      const [y, m] = key.split('-').map(Number);
+      saveMonth(y, m);
+    });
+  }
+
+  const grid = document.getElementById('grid');
+  const monthTitle = document.getElementById('monthTitle');
+  const totalAmount = document.getElementById('totalAmount');
+  const totalWon = document.getElementById('totalWon');
+  const totalLost = document.getElementById('totalLost');
+  const overlay = document.getElementById('overlay');
+  const amountInput = document.getElementById('amountInput');
+  const modalDay = document.getElementById('modalDay');
+
+  function fmtEuro(n){
+    const rounded = Math.round(n*100)/100;
+    const sign = rounded > 0 ? '+' : '';
+    return sign + '€' + rounded.toLocaleString('es-ES');
+  }
+
+  function getKey(y,m,d){ return y+'-'+m+'-'+d; }
+
+  function render(){
+    monthTitle.textContent = monthNames[currentMonth] + ' ' + currentYear;
+    grid.innerHTML = '';
+
+    const firstDay = new Date(currentYear, currentMonth, 1);
+    // JS: 0=Sun..6=Sat. We want Monday-first weekday index, and we only render Mon-Fri.
+    const daysInMonth = new Date(currentYear, currentMonth+1, 0).getDate();
+
+    // Determine weekday (0=Mon..6=Sun) of the 1st
+    let firstWeekday = (firstDay.getDay() + 6) % 7; // 0=Mon...6=Sun
+
+    // We only show columns Mon-Fri (5 cols). Leading blanks only if firstWeekday < 5.
+    // If the month starts on Sat/Sun, first weekday cell (Monday) starts fresh with day 1 shifted forward implicitly by skipping.
+    let leadingBlanks = firstWeekday <= 4 ? firstWeekday : 0;
+
+    for(let i=0;i<leadingBlanks;i++){
+      const empty = document.createElement('div');
+      empty.className = 'cell empty';
+      grid.appendChild(empty);
+    }
+
+    let weekdayCursor = firstWeekday <=4 ? firstWeekday : 0;
+
+    for(let day=1; day<=daysInMonth; day++){
+      const dateObj = new Date(currentYear, currentMonth, day);
+      const wd = (dateObj.getDay()+6)%7; // 0=Mon..6=Sun
+      if(wd === 5 || wd === 6){
+        continue; // skip Sat/Sun entirely - not rendered
+      }
+
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+
+      const today = new Date();
+      const isToday = today.getFullYear()===currentYear && today.getMonth()===currentMonth && today.getDate()===day;
+      if(isToday) cell.classList.add('today');
+
+      const num = document.createElement('div');
+      num.className = 'daynum';
+      num.textContent = day;
+      cell.appendChild(num);
+
+      const key = getKey(currentYear,currentMonth,day);
+      if(results[key] !== undefined){
+        const amt = document.createElement('div');
+        amt.className = 'amount ' + (results[key] >= 0 ? 'pos':'neg');
+        amt.textContent = fmtEuro(results[key]);
+        cell.appendChild(amt);
+      }
+
+      cell.addEventListener('click', () => openModal(day));
+      grid.appendChild(cell);
+    }
+
+    updateSummary();
+  }
+
+  function updateSummary(){
+    const keys = Object.keys(results).filter(k => k.startsWith(currentYear+'-'+currentMonth+'-'));
+    let total = 0, won = 0, lost = 0;
+    keys.forEach(k => {
+      const v = results[k];
+      total += v;
+      if(v > 0) won += v;
+      else if(v < 0) lost += v;
+    });
+    totalAmount.textContent = fmtEuro(total).replace('+','');
+    totalAmount.className = 'total ' + (total>0?'pos':total<0?'neg':'');
+    totalWon.textContent = fmtEuro(won).replace('+','');
+    totalLost.textContent = fmtEuro(lost).replace('+','');
+  }
+
+  function openModal(day){
+    activeDay = day;
+    const key = getKey(currentYear,currentMonth,day);
+    modalDay.textContent = 'DÍA ' + day + ' DE ' + monthNames[currentMonth].toUpperCase();
+    amountInput.value = results[key] !== undefined ? results[key] : '';
+    overlay.classList.add('show');
+    setTimeout(()=>amountInput.focus(), 50);
+  }
+
+  function closeModal(){
+    overlay.classList.remove('show');
+    activeDay = null;
+  }
+
+  document.getElementById('saveBtn').addEventListener('click', () => {
+    const key = getKey(currentYear,currentMonth,activeDay);
+    const val = parseFloat(amountInput.value);
+    if(!isNaN(val)){
+      results[key] = val;
+    }
+    closeModal();
+    render();
+    saveMonth(currentYear, currentMonth);
+  });
+
+  document.getElementById('clearBtn').addEventListener('click', () => {
+    const key = getKey(currentYear,currentMonth,activeDay);
+    delete results[key];
+    closeModal();
+    render();
+    saveMonth(currentYear, currentMonth);
+  });
+
+  document.getElementById('cancelBtn').addEventListener('click', closeModal);
+  overlay.addEventListener('click', (e) => { if(e.target === overlay) closeModal(); });
+
+  document.getElementById('prevBtn').addEventListener('click', () => {
+    currentMonth--;
+    if(currentMonth < 0){ currentMonth = 11; currentYear--; }
+    loadMonth(currentYear, currentMonth);
+    render();
+  });
+  document.getElementById('nextBtn').addEventListener('click', () => {
+    currentMonth++;
+    if(currentMonth > 11){ currentMonth = 0; currentYear++; }
+    loadMonth(currentYear, currentMonth);
+    render();
+  });
+
+  document.getElementById('exportBtn').addEventListener('click', exportCSV);
+
+  const saveAllBtn = document.getElementById('saveAllBtn');
+  saveAllBtn.addEventListener('click', () => {
+    saveAllMonths();
+    const original = saveAllBtn.textContent;
+    saveAllBtn.textContent = 'Guardado ✓';
+    saveAllBtn.disabled = true;
+    setTimeout(() => {
+      saveAllBtn.textContent = original;
+      saveAllBtn.disabled = false;
+    }, 1200);
+  });
+
+  function exportCSV(){
+    const keys = allMonthKeys();
+
+    if(!keys.length){
+      alert('Todavía no hay ningún resultado guardado.');
+      return;
+    }
+
+    const rows = [['Fecha','Resultado (€)']];
+
+    keys.forEach(key => {
+      // key format: diario:YYYY-M
+      const ym = key.split('diario:')[1];
+      const [y, m] = ym.split('-').map(Number);
+      try{
+        const data = JSON.parse(localStorage.getItem(key) || '{}');
+        Object.keys(data)
+          .map(Number)
+          .sort((a,b) => a-b)
+          .forEach(day => {
+            const dateStr = String(day).padStart(2,'0') + '/' + String(m+1).padStart(2,'0') + '/' + y;
+            rows.push([dateStr, data[day].toString().replace('.', ',')]);
+          });
+      }catch(e){
+        // skip unreadable month
+      }
+    });
+
+    const csvContent = rows.map(r => r.join(';')).join('\n');
+    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'diario-trading.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  loadMonth(currentYear, currentMonth);
+  render();
+
+  if('serviceWorker' in navigator){
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    });
+  }
+</script>
+</body>
+</html>
