@@ -12,6 +12,7 @@
 <meta name="apple-mobile-web-app-title" content="Diario Trading">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <link rel="icon" href="icons/icon-192.png">
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 <style>
   :root{
     --bg: #0a0a0d;
@@ -31,6 +32,26 @@
     color: var(--text);
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     padding: 28px 18px 60px;
+    display:flex;
+    justify-content:center;
+  }
+  .page{
+    width: 100%;
+    max-width: 480px;
+  }
+  @media (min-width: 900px){
+    body{ padding: 48px 24px 80px; }
+    .page{ max-width: 760px; }
+    .month-title{ font-size: 32px; }
+    .summary .total{ font-size: 46px; }
+    .cell{ min-height: 90px; padding: 12px; }
+    .cell .daynum{ font-size: 16px; }
+    .cell .amount{ font-size: 15px; }
+    .calendar{ padding: 28px 22px; }
+    .summary{ padding: 28px 28px 22px; }
+    #saveAllBtn{ max-width: 320px; cursor:pointer; }
+    #exportBtn:hover{ background:#1c1c22; }
+    #saveAllBtn:hover{ filter: brightness(1.08); }
   }
   .header{
     display:flex;
@@ -225,6 +246,7 @@
 </style>
 </head>
 <body>
+<div class="page">
 
   <div class="header">
     <span class="dot"></span>
@@ -262,7 +284,7 @@
 
   <div class="hint">Toca un día para añadir tu resultado</div>
 
-  <button id="exportBtn" style="display:block;margin:18px auto 0;background:var(--panel);border:1px solid var(--panel-border);color:var(--text);padding:12px 20px;border-radius:10px;font-size:14px;cursor:pointer;">Exportar CSV</button>
+  <button id="exportBtn" style="display:block;margin:18px auto 0;background:var(--panel);border:1px solid var(--panel-border);color:var(--text);padding:12px 20px;border-radius:10px;font-size:14px;cursor:pointer;">📊 Exportar a Excel</button>
 
   <button id="saveAllBtn" style="display:block;width:100%;max-width:400px;margin:14px auto 0;background:var(--gold);border:1px solid var(--gold);color:#1a1608;padding:14px 20px;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer;">Guardar</button>
 
@@ -277,6 +299,8 @@
       </div>
     </div>
   </div>
+
+</div>
 
 <script>
   const monthNames = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
@@ -474,7 +498,7 @@
     render();
   });
 
-  document.getElementById('exportBtn').addEventListener('click', exportCSV);
+  document.getElementById('exportBtn').addEventListener('click', exportXLSX);
 
   const saveAllBtn = document.getElementById('saveAllBtn');
   saveAllBtn.addEventListener('click', () => {
@@ -488,7 +512,7 @@
     }, 1200);
   });
 
-  function exportCSV(){
+  async function exportXLSX(){
     const keys = allMonthKeys();
 
     if(!keys.length){
@@ -496,31 +520,166 @@
       return;
     }
 
-    const rows = [['Fecha','Resultado (€)']];
-
+    // Recolectar y ordenar todas las entradas cronológicamente
+    const entries = [];
     keys.forEach(key => {
       const ym = key.split('diario:')[1];
       const [y, m] = ym.split('-').map(Number);
       try{
         const data = JSON.parse(localStorage.getItem(key) || '{}');
-        Object.keys(data)
-          .map(Number)
-          .sort((a,b) => a-b)
-          .forEach(day => {
-            const dateStr = String(day).padStart(2,'0') + '/' + String(m+1).padStart(2,'0') + '/' + y;
-            rows.push([dateStr, data[day].toString().replace('.', ',')]);
-          });
+        Object.keys(data).map(Number).forEach(day => {
+          entries.push({ y, m, day, value: data[day] });
+        });
       }catch(e){
         // mes ilegible, se omite
       }
     });
+    entries.sort((a,b) => (a.y-b.y) || (a.m-b.m) || (a.day-b.day));
 
-    const csvContent = rows.map(r => r.join(';')).join('\n');
-    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const totalWonVal = entries.filter(e=>e.value>0).reduce((s,e)=>s+e.value,0);
+    const totalLostVal = entries.filter(e=>e.value<0).reduce((s,e)=>s+e.value,0);
+    const totalNetVal = totalWonVal + totalLostVal;
+
+    const GOLD = 'FFE6B84D';
+    const PANEL = 'FF131318';
+    const CELL_DARK = 'FF17171C';
+    const TEXT_LIGHT = 'FFF2F2F0';
+    const GREEN = 'FF4FCE8A';
+    const RED = 'FFF2685C';
+    const DARK_TEXT = 'FF1A1608';
+
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Diario de Trading';
+    workbook.created = new Date();
+
+    const sheet = workbook.addWorksheet('Diario Trading', {
+      views: [{ showGridLines: false }]
+    });
+
+    sheet.columns = [
+      { width: 4 },
+      { width: 22 },
+      { width: 22 },
+      { width: 4 }
+    ];
+
+    // --- Encabezado tipo factura ---
+    sheet.mergeCells('B2:C2');
+    const titleCell = sheet.getCell('B2');
+    titleCell.value = 'DIARIO DE TRADING';
+    titleCell.font = { bold: true, size: 18, color: { argb: TEXT_LIGHT } };
+    titleCell.alignment = { horizontal: 'left', vertical: 'middle' };
+    sheet.getRow(2).height = 30;
+
+    sheet.mergeCells('B3:C3');
+    const subtitleCell = sheet.getCell('B3');
+    const fechaGeneracion = new Date().toLocaleDateString('es-ES', { day:'2-digit', month:'long', year:'numeric' });
+    subtitleCell.value = 'Informe generado el ' + fechaGeneracion;
+    subtitleCell.font = { italic: true, size: 10, color: { argb: 'FF9A9AA2' } };
+
+    for(let r=2; r<=3; r++){
+      for(let c=2; c<=3; c++){
+        sheet.getCell(r,c).fill = { type:'pattern', pattern:'solid', fgColor:{argb: PANEL} };
+      }
+    }
+
+    // --- Resumen tipo factura (totales destacados) ---
+    const summaryStartRow = 5;
+    sheet.mergeCells(`B${summaryStartRow}:C${summaryStartRow}`);
+    const totalLabelCell = sheet.getCell(`B${summaryStartRow}`);
+    totalLabelCell.value = 'RESULTADO NETO';
+    totalLabelCell.font = { bold: true, size: 10, color: { argb: 'FF9A9AA2' } };
+    totalLabelCell.fill = { type:'pattern', pattern:'solid', fgColor:{argb: PANEL} };
+
+    sheet.mergeCells(`B${summaryStartRow+1}:C${summaryStartRow+1}`);
+    const totalValueCell = sheet.getCell(`B${summaryStartRow+1}`);
+    totalValueCell.value = totalNetVal;
+    totalValueCell.numFmt = '+#,##0.00 "€";-#,##0.00 "€"';
+    totalValueCell.font = { bold: true, size: 22, color: { argb: totalNetVal >= 0 ? GREEN : RED } };
+    totalValueCell.fill = { type:'pattern', pattern:'solid', fgColor:{argb: PANEL} };
+    sheet.getRow(summaryStartRow+1).height = 28;
+
+    const wonCell = sheet.getCell(`B${summaryStartRow+3}`);
+    wonCell.value = 'Ganado';
+    wonCell.font = { size: 9, color: { argb: 'FF9A9AA2' } };
+    const wonValCell = sheet.getCell(`B${summaryStartRow+4}`);
+    wonValCell.value = totalWonVal;
+    wonValCell.numFmt = '#,##0.00 "€"';
+    wonValCell.font = { bold: true, size: 13, color: { argb: GREEN } };
+
+    const lostCell = sheet.getCell(`C${summaryStartRow+3}`);
+    lostCell.value = 'Perdido';
+    lostCell.font = { size: 9, color: { argb: 'FF9A9AA2' } };
+    const lostValCell = sheet.getCell(`C${summaryStartRow+4}`);
+    lostValCell.value = totalLostVal;
+    lostValCell.numFmt = '#,##0.00 "€"';
+    lostValCell.font = { bold: true, size: 13, color: { argb: RED } };
+
+    // --- Tabla de movimientos ---
+    const tableHeaderRow = summaryStartRow + 6;
+    sheet.getCell(`B${tableHeaderRow}`).value = 'FECHA';
+    sheet.getCell(`C${tableHeaderRow}`).value = 'RESULTADO';
+    ['B','C'].forEach(col => {
+      const c = sheet.getCell(`${col}${tableHeaderRow}`);
+      c.font = { bold: true, size: 11, color: { argb: DARK_TEXT } };
+      c.fill = { type:'pattern', pattern:'solid', fgColor:{argb: GOLD} };
+      c.alignment = { horizontal: col==='B' ? 'left':'right', vertical:'middle' };
+      c.border = { top:{style:'thin',color:{argb:GOLD}}, bottom:{style:'thin',color:{argb:GOLD}} };
+    });
+    sheet.getRow(tableHeaderRow).height = 22;
+
+    const monthNamesEs = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+
+    entries.forEach((entry, i) => {
+      const rowIndex = tableHeaderRow + 1 + i;
+      const dateCell = sheet.getCell(`B${rowIndex}`);
+      dateCell.value = entry.day + ' de ' + monthNamesEs[entry.m] + ' de ' + entry.y;
+      dateCell.font = { size: 11, color: { argb: TEXT_LIGHT } };
+      dateCell.alignment = { horizontal: 'left' };
+
+      const valCell = sheet.getCell(`C${rowIndex}`);
+      valCell.value = entry.value;
+      valCell.numFmt = '+#,##0.00 "€";-#,##0.00 "€"';
+      valCell.font = { bold: true, size: 11, color: { argb: entry.value >= 0 ? GREEN : RED } };
+      valCell.alignment = { horizontal: 'right' };
+
+      const bg = i % 2 === 0 ? CELL_DARK : PANEL;
+      [dateCell, valCell].forEach(c => {
+        c.fill = { type:'pattern', pattern:'solid', fgColor:{argb: bg} };
+        c.border = { bottom:{style:'thin',color:{argb:'FF232329'}} };
+      });
+    });
+
+    // --- Fila de total final ---
+    const totalRowIndex = tableHeaderRow + entries.length + 1;
+    const totalLbl = sheet.getCell(`B${totalRowIndex}`);
+    totalLbl.value = 'TOTAL';
+    totalLbl.font = { bold: true, size: 12, color: { argb: DARK_TEXT } };
+    totalLbl.fill = { type:'pattern', pattern:'solid', fgColor:{argb: GOLD} };
+
+    const totalVal = sheet.getCell(`C${totalRowIndex}`);
+    totalVal.value = totalNetVal;
+    totalVal.numFmt = '+#,##0.00 "€";-#,##0.00 "€"';
+    totalVal.font = { bold: true, size: 12, color: { argb: DARK_TEXT } };
+    totalVal.fill = { type:'pattern', pattern:'solid', fgColor:{argb: GOLD} };
+    totalVal.alignment = { horizontal: 'right' };
+
+    // Fondo oscuro general de la hoja (para que se vea como la app)
+    for(let r=1; r<=totalRowIndex+2; r++){
+      for(let c=1; c<=4; c++){
+        const cell = sheet.getCell(r,c);
+        if(!cell.fill){
+          cell.fill = { type:'pattern', pattern:'solid', fgColor:{argb: 'FF0A0A0D'} };
+        }
+      }
+    }
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'diario-trading.csv';
+    a.download = 'diario-trading.xlsx';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
