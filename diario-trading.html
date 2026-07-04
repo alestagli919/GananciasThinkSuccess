@@ -281,10 +281,10 @@
 <script>
   const monthNames = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 
-  let currentYear = 2026;
-  let currentMonth = 6; // July (0-indexed)
+  const today0 = new Date();
+  let currentYear = today0.getFullYear();
+  let currentMonth = today0.getMonth();
   let activeDay = null;
-  let loaded = false;
 
   // in-memory cache: key "YYYY-M-D" -> number, mirrored to persistent storage
   const results = {};
@@ -364,14 +364,10 @@
     grid.innerHTML = '';
 
     const firstDay = new Date(currentYear, currentMonth, 1);
-    // JS: 0=Sun..6=Sat. We want Monday-first weekday index, and we only render Mon-Fri.
     const daysInMonth = new Date(currentYear, currentMonth+1, 0).getDate();
 
-    // Determine weekday (0=Mon..6=Sun) of the 1st
     let firstWeekday = (firstDay.getDay() + 6) % 7; // 0=Mon...6=Sun
 
-    // We only show columns Mon-Fri (5 cols). Leading blanks only if firstWeekday < 5.
-    // If the month starts on Sat/Sun, first weekday cell (Monday) starts fresh with day 1 shifted forward implicitly by skipping.
     let leadingBlanks = firstWeekday <= 4 ? firstWeekday : 0;
 
     for(let i=0;i<leadingBlanks;i++){
@@ -380,13 +376,11 @@
       grid.appendChild(empty);
     }
 
-    let weekdayCursor = firstWeekday <=4 ? firstWeekday : 0;
-
     for(let day=1; day<=daysInMonth; day++){
       const dateObj = new Date(currentYear, currentMonth, day);
       const wd = (dateObj.getDay()+6)%7; // 0=Mon..6=Sun
       if(wd === 5 || wd === 6){
-        continue; // skip Sat/Sun entirely - not rendered
+        continue; // fin de semana, no se muestra
       }
 
       const cell = document.createElement('div');
@@ -505,7 +499,6 @@
     const rows = [['Fecha','Resultado (€)']];
 
     keys.forEach(key => {
-      // key format: diario:YYYY-M
       const ym = key.split('diario:')[1];
       const [y, m] = ym.split('-').map(Number);
       try{
@@ -518,7 +511,7 @@
             rows.push([dateStr, data[day].toString().replace('.', ',')]);
           });
       }catch(e){
-        // skip unreadable month
+        // mes ilegible, se omite
       }
     });
 
