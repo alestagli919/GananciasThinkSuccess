@@ -13,6 +13,56 @@
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <link rel="icon" href="icons/icon-192.png">
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyAzP6yTVlUpH1hsaO1mLYVfiIQ7VMaPycc",
+    authDomain: "thinksuccess-ganancias.firebaseapp.com",
+    projectId: "thinksuccess-ganancias",
+    storageBucket: "thinksuccess-ganancias.firebasestorage.app",
+    messagingSenderId: "75511851",
+    appId: "1:75511851:web:be63162e666463afc1526e"
+  };
+
+  const CLAVE_SECRETA = "1216531loff";
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+  const docRef = doc(db, "diario", CLAVE_SECRETA);
+
+  let isRemoteUpdate = false;
+
+  window.__firebaseSync = {
+    async pushAll(){
+      const backup = {};
+      for(let i=0;i<localStorage.length;i++){
+        const k = localStorage.key(i);
+        if(k && k.startsWith('diario:')){
+          try{ backup[k] = JSON.parse(localStorage.getItem(k)); }catch(e){}
+        }
+      }
+      isRemoteUpdate = true;
+      try{
+        await setDoc(docRef, { data: backup, updatedAt: Date.now() });
+      }catch(e){
+        console.warn('No se pudo sincronizar con la nube', e);
+      }
+      setTimeout(()=>{ isRemoteUpdate = false; }, 300);
+    }
+  };
+
+  onSnapshot(docRef, (snap) => {
+    if(!snap.exists()) return;
+    if(isRemoteUpdate) return;
+    const remote = snap.data().data || {};
+    Object.keys(remote).forEach(k => {
+      localStorage.setItem(k, JSON.stringify(remote[k]));
+    });
+    if(window.__onCloudSync) window.__onCloudSync();
+  });
+</script>
 <style>
   :root{
     --bg: #0a0a0d;
@@ -350,7 +400,13 @@
     }catch(e){
       console.warn('No se pudo guardar el diario en este dispositivo.', e);
     }
+    if(window.__firebaseSync) window.__firebaseSync.pushAll();
   }
+
+  window.__onCloudSync = function(){
+    loadMonth(currentYear, currentMonth);
+    render();
+  };
 
   function allMonthKeys(){
     const keys = [];
