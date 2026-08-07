@@ -233,6 +233,79 @@
     margin-top: 18px;
   }
 
+  .resumen-box{
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 18px;
+    padding: 18px 18px 16px;
+    margin-top: 18px;
+  }
+  .resumen-box .label{
+    font-size: 12px;
+    letter-spacing: 2px;
+    color: var(--muted);
+    margin-bottom: 10px;
+    font-weight: 700;
+  }
+  .resumen-box textarea{
+    width: 100%;
+    background: var(--cell);
+    border: 1px solid var(--panel-border);
+    color: var(--text);
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-family: inherit;
+    font-size: 14px;
+    line-height: 1.4;
+    resize: vertical;
+    min-height: 90px;
+  }
+  .resumen-box textarea:focus{ outline: none; border-color: var(--gold); }
+
+  .equity-box{
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 18px;
+    padding: 18px 18px 10px;
+    margin-top: 18px;
+  }
+  .equity-box .label{
+    font-size: 12px;
+    letter-spacing: 2px;
+    color: var(--muted);
+    margin-bottom: 10px;
+    font-weight: 700;
+  }
+  .equity-chart{
+    position: relative;
+    width: 100%;
+    height: 180px;
+    touch-action: pan-y;
+  }
+  .equity-chart svg{ display:block; width:100%; height:100%; }
+  .equity-empty{
+    color: var(--muted);
+    font-size: 13px;
+    text-align:center;
+    padding: 60px 0;
+  }
+  .equity-tooltip{
+    position:absolute;
+    top: 0;
+    background: var(--cell);
+    border: 1px solid var(--gold);
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-size: 12px;
+    white-space: nowrap;
+    pointer-events:none;
+    display:none;
+    transform: translate(-50%, -105%);
+    z-index: 5;
+  }
+  .equity-tooltip .t-day{ color: var(--muted); margin-bottom:2px; }
+  .equity-tooltip .t-val{ font-weight:700; }
+
   /* modal */
   .overlay{
     position:fixed; inset:0;
@@ -334,6 +407,16 @@
 
   <div class="hint">Toca un día para añadir tu resultado</div>
 
+  <div class="resumen-box">
+    <div class="label">RESUMEN</div>
+    <textarea id="monthSummary" placeholder="Escribe aquí un resumen de este mes..."></textarea>
+  </div>
+
+  <div class="equity-box">
+    <div class="label">CURVA DEL MES</div>
+    <div class="equity-chart" id="equityChart"></div>
+  </div>
+
   <button id="exportBtn" style="display:block;margin:18px auto 0;background:var(--panel);border:1px solid var(--panel-border);color:var(--text);padding:12px 20px;border-radius:10px;font-size:14px;cursor:pointer;">📊 Exportar a Excel</button>
 
   <div style="display:flex;gap:10px;max-width:400px;margin:14px auto 0;">
@@ -371,6 +454,7 @@
   const results = {};
 
   function monthKey(y,m){ return 'diario:' + y + '-' + m; }
+  function resumenKey(y,m){ return 'diario:resumen-' + y + '-' + m; }
 
   function loadMonth(y,m){
     try{
@@ -385,6 +469,7 @@
     }catch(e){
       // no hay datos guardados todavía para este mes
     }
+    loadResumen(y,m);
   }
 
   function saveMonth(y,m){
@@ -399,6 +484,22 @@
       localStorage.setItem(monthKey(y,m), JSON.stringify(data));
     }catch(e){
       console.warn('No se pudo guardar el diario en este dispositivo.', e);
+    }
+    if(window.__firebaseSync) window.__firebaseSync.pushAll();
+  }
+
+  function loadResumen(y,m){
+    const el = document.getElementById('monthSummary');
+    if(!el) return;
+    const raw = localStorage.getItem(resumenKey(y,m));
+    el.value = raw || '';
+  }
+
+  function saveResumen(){
+    try{
+      localStorage.setItem(resumenKey(currentYear,currentMonth), document.getElementById('monthSummary').value);
+    }catch(e){
+      console.warn('No se pudo guardar el resumen en este dispositivo.', e);
     }
     if(window.__firebaseSync) window.__firebaseSync.pushAll();
   }
@@ -570,6 +671,7 @@
     }
 
     updateSummary();
+    renderEquityChart();
   }
 
   function updateSummary(){
@@ -585,6 +687,110 @@
     totalAmount.className = 'total ' + (total>0?'pos':total<0?'neg':'');
     totalWon.textContent = fmtEuro(won).replace('+','');
     totalLost.textContent = fmtEuro(lost).replace('+','');
+  }
+
+  function renderEquityChart(){
+    const container = document.getElementById('equityChart');
+    if(!container) return;
+
+    const keys = Object.keys(results).filter(k => k.startsWith(currentYear+'-'+currentMonth+'-'));
+    const points = keys.map(k => {
+      const parts = k.split('-');
+      return { day: parseInt(parts[2], 10), value: results[k] };
+    }).sort((a,b) => a.day - b.day);
+
+    if(points.length < 2){
+      container.innerHTML = '<div class="equity-empty">Añade al menos 2 resultados para ver la curva</div>';
+      return;
+    }
+
+    let cum = 0;
+    const data = points.map(p => { cum += p.value; return { day: p.day, value: p.value, cum: cum }; });
+
+    const W = 600, H = 200, PAD = 12;
+    const values = data.map(d => d.cum);
+    let min = Math.min(0, ...values);
+    let max = Math.max(0, ...values);
+    if(min === max){ min -= 1; max += 1; }
+    const range = max - min;
+
+    function xAt(i){ return PAD + (i/(data.length-1)) * (W - PAD*2); }
+    function yAt(v){ return H - PAD - ((v - min)/range) * (H - PAD*2); }
+
+    let pathD = '';
+    data.forEach((d,i) => {
+      const x = xAt(i), y = yAt(d.cum);
+      pathD += (i===0 ? 'M':'L') + x.toFixed(2) + ',' + y.toFixed(2) + ' ';
+    });
+    pathD = pathD.trim();
+
+    const areaD = pathD + ' L' + xAt(data.length-1).toFixed(2) + ',' + (H-PAD).toFixed(2) +
+                  ' L' + xAt(0).toFixed(2) + ',' + (H-PAD).toFixed(2) + ' Z';
+
+    const isPos = data[data.length-1].cum >= 0;
+    const lineColor = isPos ? '#4fce8a' : '#f2685c';
+
+    container.innerHTML =
+      '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">' +
+        '<defs>' +
+          '<linearGradient id="eqGrad" x1="0" y1="0" x2="0" y2="1">' +
+            '<stop offset="0%" stop-color="' + lineColor + '" stop-opacity="0.35"/>' +
+            '<stop offset="100%" stop-color="' + lineColor + '" stop-opacity="0"/>' +
+          '</linearGradient>' +
+        '</defs>' +
+        '<path d="' + areaD + '" fill="url(#eqGrad)" stroke="none"></path>' +
+        '<path d="' + pathD + '" fill="none" stroke="' + lineColor + '" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"></path>' +
+        '<line id="eqGuide" x1="0" y1="0" x2="0" y2="' + H + '" stroke="#3a3a42" stroke-width="1" stroke-dasharray="4,4" style="display:none;"></line>' +
+        '<circle id="eqDot" r="4.5" fill="' + lineColor + '" stroke="#0a0a0d" stroke-width="1.5" style="display:none;"></circle>' +
+      '</svg>' +
+      '<div class="equity-tooltip" id="eqTooltip">' +
+        '<div class="t-day" id="eqTooltipDay"></div>' +
+        '<div class="t-val" id="eqTooltipVal"></div>' +
+      '</div>';
+
+    const guide = document.getElementById('eqGuide');
+    const dot = document.getElementById('eqDot');
+    const tooltip = document.getElementById('eqTooltip');
+    const tDay = document.getElementById('eqTooltipDay');
+    const tVal = document.getElementById('eqTooltipVal');
+
+    function showAt(clientX){
+      const rect = container.getBoundingClientRect();
+      let relX = clientX - rect.left;
+      relX = Math.max(0, Math.min(rect.width, relX));
+      const ratio = rect.width ? relX / rect.width : 0;
+      let idx = Math.round(ratio * (data.length-1));
+      idx = Math.max(0, Math.min(data.length-1, idx));
+      const d = data[idx];
+      const xSvg = xAt(idx), ySvg = yAt(d.cum);
+
+      guide.setAttribute('x1', xSvg); guide.setAttribute('x2', xSvg);
+      guide.style.display = 'block';
+      dot.setAttribute('cx', xSvg); dot.setAttribute('cy', ySvg);
+      dot.style.display = 'block';
+
+      const pxLeft = (xSvg / W) * rect.width;
+      const pxTop = (ySvg / H) * rect.height;
+      tooltip.style.left = pxLeft + 'px';
+      tooltip.style.top = pxTop + 'px';
+      tooltip.style.display = 'block';
+
+      tDay.textContent = 'Día ' + d.day + ' de ' + monthNames[currentMonth];
+      tVal.textContent = fmtEuro(d.value) + '  ·  Balance: ' + fmtEuro(d.cum);
+      tVal.style.color = d.cum >= 0 ? '#4fce8a' : '#f2685c';
+    }
+
+    function hide(){
+      guide.style.display = 'none';
+      dot.style.display = 'none';
+      tooltip.style.display = 'none';
+    }
+
+    container.addEventListener('mousemove', (e) => showAt(e.clientX));
+    container.addEventListener('mouseleave', hide);
+    container.addEventListener('touchstart', (e) => { showAt(e.touches[0].clientX); }, {passive:true});
+    container.addEventListener('touchmove', (e) => { showAt(e.touches[0].clientX); e.preventDefault(); }, {passive:false});
+    container.addEventListener('touchend', hide);
   }
 
   function openModal(day){
@@ -636,11 +842,20 @@
     render();
   });
 
+  const monthSummaryEl = document.getElementById('monthSummary');
+  let resumenTimeout;
+  monthSummaryEl.addEventListener('input', () => {
+    clearTimeout(resumenTimeout);
+    resumenTimeout = setTimeout(saveResumen, 600);
+  });
+  monthSummaryEl.addEventListener('blur', saveResumen);
+
   document.getElementById('exportBtn').addEventListener('click', exportXLSX);
 
   const saveAllBtn = document.getElementById('saveAllBtn');
   saveAllBtn.addEventListener('click', () => {
     saveAllMonths();
+    saveResumen();
     const original = saveAllBtn.textContent;
     saveAllBtn.textContent = 'Guardado ✓';
     saveAllBtn.disabled = true;
@@ -651,7 +866,7 @@
   });
 
   async function exportXLSX(){
-    const keys = allMonthKeys();
+    const keys = allMonthKeys().filter(k => !k.startsWith('diario:resumen-'));
 
     if(!keys.length){
       alert('Todavía no hay ningún resultado guardado.');
