@@ -247,7 +247,19 @@
     margin-bottom: 10px;
     font-weight: 700;
   }
-  .resumen-box textarea{
+  .resumen-content{
+    display:flex;
+    gap: 12px;
+    align-items:flex-start;
+  }
+  .resumen-editor{
+    flex: 1;
+    min-width: 0;
+    display:flex;
+    flex-direction:column;
+    gap: 8px;
+  }
+  .resumen-editor textarea{
     width: 100%;
     background: var(--cell);
     border: 1px solid var(--panel-border);
@@ -258,9 +270,66 @@
     font-size: 14px;
     line-height: 1.4;
     resize: vertical;
-    min-height: 90px;
+    min-height: 110px;
   }
-  .resumen-box textarea:focus{ outline: none; border-color: var(--gold); }
+  .resumen-editor textarea:focus{ outline: none; border-color: var(--gold); }
+  .resumen-actions{
+    display:flex;
+    gap: 8px;
+  }
+  .resumen-actions button{
+    flex:1;
+    background: var(--cell);
+    border: 1px solid var(--panel-border);
+    color: var(--text);
+    border-radius: 8px;
+    padding: 9px 6px;
+    font-size: 12px;
+    cursor:pointer;
+  }
+  .resumen-actions button:hover{ border-color:#3a3a42; }
+  #deleteNoteBtn{ color: var(--red); }
+
+  .resumen-notes{
+    width: 58px;
+    flex-shrink: 0;
+    display:flex;
+    flex-direction:column;
+    gap: 6px;
+    max-height: 178px;
+    overflow-y: auto;
+  }
+  .note-chip{
+    background: var(--cell);
+    border: 1px solid var(--panel-border);
+    border-radius: 9px;
+    padding: 7px 4px;
+    text-align:center;
+    cursor:pointer;
+  }
+  .note-chip:hover{ border-color:#3a3a42; }
+  .note-chip.active{ border-color: var(--gold); background:#1d1a10; }
+  .note-chip .note-day{
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1.1;
+  }
+  .note-chip.active .note-day{ color: var(--gold); }
+  .note-chip .note-mon{
+    font-size: 9px;
+    color: var(--muted);
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+  .notes-empty{
+    font-size: 11px;
+    color: var(--muted);
+    text-align:center;
+    padding: 14px 2px;
+    border: 1px dashed var(--panel-border);
+    border-radius: 9px;
+  }
 
   .equity-box{
     background: var(--panel);
@@ -409,7 +478,16 @@
 
   <div class="resumen-box">
     <div class="label">RESUMEN</div>
-    <textarea id="monthSummary" placeholder="Escribe aquí un resumen de este mes..."></textarea>
+    <div class="resumen-content">
+      <div class="resumen-editor">
+        <textarea id="monthSummary" placeholder="Escribe aquí un resumen de este mes..."></textarea>
+        <div class="resumen-actions">
+          <button id="newNoteBtn" type="button">+ Nueva nota</button>
+          <button id="deleteNoteBtn" type="button">🗑 Borrar</button>
+        </div>
+      </div>
+      <div class="resumen-notes" id="notesList"></div>
+    </div>
   </div>
 
   <div class="equity-box">
@@ -453,6 +531,10 @@
   // in-memory cache: key "YYYY-M-D" -> number, mirrored to persistent storage
   const results = {};
 
+  // notas del resumen del mes actual: [{id, text, createdAt}]
+  let currentNotes = [];
+  let activeNoteId = null;
+
   function monthKey(y,m){ return 'diario:' + y + '-' + m; }
   function resumenKey(y,m){ return 'diario:resumen-' + y + '-' + m; }
 
@@ -489,19 +571,100 @@
   }
 
   function loadResumen(y,m){
-    const el = document.getElementById('monthSummary');
-    if(!el) return;
     const raw = localStorage.getItem(resumenKey(y,m));
-    el.value = raw || '';
+    let notes = [];
+    if(raw){
+      try{
+        const parsed = JSON.parse(raw);
+        if(Array.isArray(parsed)){
+          notes = parsed;
+        }else if(typeof parsed === 'string' && parsed.trim()){
+          notes = [{ id: Date.now(), text: parsed, createdAt: Date.now() }];
+        }
+      }catch(e){
+        // valor antiguo guardado como texto plano (antes de que hubiera notas)
+        if(raw.trim()) notes = [{ id: Date.now(), text: raw, createdAt: Date.now() }];
+      }
+    }
+    currentNotes = notes;
+    activeNoteId = null;
+    const el = document.getElementById('monthSummary');
+    if(el) el.value = '';
+    renderNotesList();
   }
 
-  function saveResumen(){
+  function persistNotes(){
     try{
-      localStorage.setItem(resumenKey(currentYear,currentMonth), document.getElementById('monthSummary').value);
+      localStorage.setItem(resumenKey(currentYear,currentMonth), JSON.stringify(currentNotes));
     }catch(e){
       console.warn('No se pudo guardar el resumen en este dispositivo.', e);
     }
     if(window.__firebaseSync) window.__firebaseSync.pushAll();
+  }
+
+  function saveNoteFromEditor(){
+    const el = document.getElementById('monthSummary');
+    if(!el) return;
+    const text = el.value.trim();
+    if(!text) return;
+
+    if(activeNoteId){
+      const note = currentNotes.find(n => n.id === activeNoteId);
+      if(note){
+        note.text = text;
+      }else{
+        const newNote = { id: activeNoteId, text: text, createdAt: Date.now() };
+        currentNotes.push(newNote);
+      }
+    }else{
+      const newNote = { id: Date.now(), text: text, createdAt: Date.now() };
+      currentNotes.push(newNote);
+      activeNoteId = newNote.id;
+    }
+    persistNotes();
+    renderNotesList();
+  }
+
+  function renderNotesList(){
+    const list = document.getElementById('notesList');
+    if(!list) return;
+    list.innerHTML = '';
+
+    if(!currentNotes.length){
+      list.innerHTML = '<div class="notes-empty">Sin notas</div>';
+      return;
+    }
+
+    const sorted = [...currentNotes].sort((a,b) => b.createdAt - a.createdAt);
+    sorted.forEach(note => {
+      const chip = document.createElement('div');
+      chip.className = 'note-chip' + (note.id === activeNoteId ? ' active' : '');
+      const d = new Date(note.createdAt);
+      const dayStr = d.getDate().toString().padStart(2,'0');
+      const monStr = monthNames[d.getMonth()].slice(0,3);
+      chip.innerHTML = '<div class="note-day">'+dayStr+'</div><div class="note-mon">'+monStr+'</div>';
+      chip.title = note.text.length > 80 ? note.text.slice(0,80)+'…' : note.text;
+      chip.addEventListener('click', () => selectNote(note.id));
+      list.appendChild(chip);
+    });
+  }
+
+  function selectNote(id){
+    activeNoteId = id;
+    const note = currentNotes.find(n => n.id === id);
+    const el = document.getElementById('monthSummary');
+    if(el) el.value = note ? note.text : '';
+    renderNotesList();
+  }
+
+  function deleteActiveNote(){
+    if(!activeNoteId) return;
+    if(!confirm('¿Borrar esta nota?')) return;
+    currentNotes = currentNotes.filter(n => n.id !== activeNoteId);
+    activeNoteId = null;
+    document.getElementById('monthSummary').value = '';
+    persistNotes();
+    renderNotesList();
   }
 
   window.__onCloudSync = function(){
@@ -846,16 +1009,26 @@
   let resumenTimeout;
   monthSummaryEl.addEventListener('input', () => {
     clearTimeout(resumenTimeout);
-    resumenTimeout = setTimeout(saveResumen, 600);
+    resumenTimeout = setTimeout(saveNoteFromEditor, 600);
   });
-  monthSummaryEl.addEventListener('blur', saveResumen);
+  monthSummaryEl.addEventListener('blur', saveNoteFromEditor);
+
+  document.getElementById('newNoteBtn').addEventListener('click', () => {
+    saveNoteFromEditor();
+    activeNoteId = null;
+    monthSummaryEl.value = '';
+    renderNotesList();
+    monthSummaryEl.focus();
+  });
+
+  document.getElementById('deleteNoteBtn').addEventListener('click', deleteActiveNote);
 
   document.getElementById('exportBtn').addEventListener('click', exportXLSX);
 
   const saveAllBtn = document.getElementById('saveAllBtn');
   saveAllBtn.addEventListener('click', () => {
     saveAllMonths();
-    saveResumen();
+    saveNoteFromEditor();
     const original = saveAllBtn.textContent;
     saveAllBtn.textContent = 'Guardado ✓';
     saveAllBtn.disabled = true;
